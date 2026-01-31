@@ -203,7 +203,7 @@ Keep it real. Don't sound like an AI.
         else:
             result = await self.agent.run(prompt)
             
-        return result.output
+        return getattr(result, 'data', str(result))
 
     async def classify_categories(self, text: str) -> List[str]:
         """Use pydantic-ai for structured classification"""
@@ -214,9 +214,13 @@ Keep it real. Don't sound like an AI.
         
         try:
             result = await self.classifier.run(prompt)
-            cats = [c.strip().lower() for c in result.output.categories]
-            valid_cats = [c for c in cats if c in CATEGORIES]
-            return valid_cats if valid_cats else ["general"]
+            # Use .data for structured output
+            data = getattr(result, 'data', None)
+            if data and hasattr(data, 'categories'):
+                cats = [c.strip().lower() for c in data.categories]
+                valid_cats = [c for c in cats if c in CATEGORIES]
+                return valid_cats if valid_cats else ["general"]
+            return ["general"]
         except Exception as e:
             print(f"Classification error: {e}")
             return ["general"]

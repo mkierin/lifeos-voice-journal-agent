@@ -42,14 +42,19 @@ vector_store = VectorStore()
 llm_client = LLMClient()
 
 FEEDBACK_PHRASES = [
-    "Got it, looking into that...",
     "On it!",
     "Checking your journal...",
     "Thinking...",
     "Got you, one sec...",
     "Processing that...",
     "Let me see...",
-    "Searching your entries..."
+    "Searching your entries...",
+    "I'm on it!",
+    "Just a moment...",
+    "Looking that up for you...",
+    "Getting right on it!",
+    "Let me check my notes...",
+    "Thinking about it..."
 ]
 
 def get_random_feedback():
