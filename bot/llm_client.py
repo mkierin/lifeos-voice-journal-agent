@@ -21,13 +21,9 @@ class LLMClient:
     def _setup_agents(self):
         provider = get_setting("llm_provider")
         if provider == "deepseek":
-            model_name = "openai:deepseek-chat"
-            base_url = "https://api.deepseek.com"
-            api_key = DEEPSEEK_API_KEY
+            model_name = "deepseek:deepseek-chat"
         else:
             model_name = "openai:gpt-4o-mini"
-            base_url = None
-            api_key = OPENAI_API_KEY
 
         # Base agent for general responses
         self.agent = Agent(
@@ -56,16 +52,10 @@ class LLMClient:
         # Classifier agent for structured output
         self.classifier = Agent(
             model_name,
-            result_type=ClassificationOutput,
+            output_type=ClassificationOutput,
             system_prompt="You are an expert classifier. Categorize the journal entry accurately.",
             retries=2
         )
-        
-        # Configure model with proper API key and base URL
-        from pydantic_ai.models.openai import OpenAIChatModel
-        model = OpenAIChatModel(model_name.split(':', 1)[1], base_url=base_url, api_key=api_key)
-        self.agent.model = model
-        self.classifier.model = model
 
     def generate(self, prompt: str, system_prompt: str = None) -> str:
         """Generate response from LLM using pydantic-ai"""
@@ -78,7 +68,7 @@ class LLMClient:
         else:
             result = self.agent.run_sync(prompt)
             
-        return result.data
+        return result.output
 
     def classify_categories(self, text: str) -> List[str]:
         """Use pydantic-ai for structured classification"""
@@ -89,7 +79,7 @@ class LLMClient:
         
         try:
             result = self.classifier.run_sync(prompt)
-            cats = [c.strip().lower() for c in result.data.categories]
+            cats = [c.strip().lower() for c in result.output.categories]
             valid_cats = [c for c in cats if c in CATEGORIES]
             return valid_cats if valid_cats else ["general"]
         except Exception as e:
