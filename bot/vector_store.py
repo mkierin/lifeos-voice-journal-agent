@@ -14,7 +14,12 @@ class VectorStore:
                 'encode': lambda self, x: [0.1] * 384
             })()
         else:
-            self.client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+            # Check if QDRANT_HOST is a path (starts with . or / or \ or contains :)
+            # On Windows, it might be C:\... or similar
+            if QDRANT_HOST.startswith((".", "/", "\\")) or ":" in QDRANT_HOST[1:]:
+                self.client = QdrantClient(path=QDRANT_HOST)
+            else:
+                self.client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
             self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
         self.collection_name = "journal"
         self.tasks_collection = "tasks"
