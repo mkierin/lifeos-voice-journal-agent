@@ -59,20 +59,20 @@ class LLMClient:
             retries=2
         )
 
-    def generate(self, prompt: str, system_prompt: str = None) -> str:
+    async def generate(self, prompt: str, system_prompt: str = None) -> str:
         """Generate response from LLM using pydantic-ai"""
         self._setup_agents() # Refresh settings
         
         if system_prompt:
             # Create a temporary agent with the custom system prompt
             temp_agent = Agent(self.agent.model, system_prompt=system_prompt)
-            result = temp_agent.run_sync(prompt)
+            result = await temp_agent.run(prompt)
         else:
-            result = self.agent.run_sync(prompt)
+            result = await self.agent.run(prompt)
             
         return result.output
 
-    def classify_categories(self, text: str) -> List[str]:
+    async def classify_categories(self, text: str) -> List[str]:
         """Use pydantic-ai for structured classification"""
         self._setup_agents()
         
@@ -80,7 +80,7 @@ class LLMClient:
         prompt = f"Classify this journal entry into one or more of these categories: {category_list}\n\nEntry: \"{text}\""
         
         try:
-            result = self.classifier.run_sync(prompt)
+            result = await self.classifier.run(prompt)
             cats = [c.strip().lower() for c in result.output.categories]
             valid_cats = [c for c in cats if c in CATEGORIES]
             return valid_cats if valid_cats else ["general"]

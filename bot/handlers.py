@@ -58,7 +58,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise api_err
         
         # Structured classification using pydantic-ai
-        categories = llm_client.classify_categories(text)
+        categories = await llm_client.classify_categories(text)
         
         # Adding to vector store
         vector_store.add_entry(
@@ -71,7 +71,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         deps = JournalDeps(vector_store=vector_store, user_id=update.message.from_user.id)
         prompt = f"User just said: \"{text}\". Provide a brief, helpful response. You can search the journal if needed to provide better context."
         
-        response = llm_client.agent.run_sync(prompt, deps=deps)
+        response = await llm_client.agent.run(prompt, deps=deps)
         
         await update.message.reply_text(
             f"📝 *Transcribed:*\n{text}\n\n"
@@ -94,9 +94,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Let the agent handle the query, using tools to search if necessary
     deps = JournalDeps(vector_store=vector_store, user_id=update.message.from_user.id)
-    response = llm_client.agent.run_sync(query, deps=deps)
+    result = await llm_client.agent.run(query, deps=deps)
     
-    await update.message.reply_text(response.data)
+    await update.message.reply_text(result.data)
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
