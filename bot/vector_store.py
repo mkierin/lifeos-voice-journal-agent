@@ -1,5 +1,5 @@
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, MatchAny
 from sentence_transformers import SentenceTransformer
 import uuid
 from datetime import datetime
@@ -32,7 +32,8 @@ class VectorStore:
     
     def add_entry(self, text: str, categories: list, user_id: int, metadata: dict = None):
         """Add journal entry to vector store"""
-        embedding = self.embedder.encode(text).tolist()
+        res = self.embedder.encode(text)
+        embedding = res.tolist() if hasattr(res, 'tolist') else res
         
         payload = {
             "text": text,
@@ -59,22 +60,23 @@ class VectorStore:
     
     def search(self, query: str, user_id: int, categories: list = None, limit: int = 5):
         """Search for relevant entries"""
-        query_embedding = self.embedder.encode(query).tolist()
+        res = self.embedder.encode(query)
+        query_embedding = res.tolist() if hasattr(res, 'tolist') else res
         
-        filter_conditions = {"user_id": user_id}
-        
-        # Build filter conditions for Qdrant
-        must_filters = [{"key": "user_id", "match": {"value": user_id}}]
+        # Build filter conditions for Qdrant using models
+        must_filters = [
+            FieldCondition(key="user_id", match=MatchValue(value=user_id))
+        ]
         
         if categories:
             # Match any of the categories
-            must_filters.append({"key": "categories", "match": {"any": categories}})
+            must_filters.append(FieldCondition(key="categories", match=MatchAny(any=categories)))
         
         results = self.client.search(
             collection_name=self.collection_name,
             query_vector=query_embedding,
             limit=limit,
-            query_filter={"must": must_filters}
+            query_filter=Filter(must=must_filters)
         )
         
         return results
@@ -83,7 +85,9 @@ class VectorStore:
         """Get recent entries for a user"""
         results = self.client.scroll(
             collection_name=self.collection_name,
-            scroll_filter={"must": [{"key": "user_id", "match": {"value": user_id}}]},
+            scroll_filter=Filter(
+                must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))]
+            ),
             limit=limit,
             with_payload=True,
             with_vectors=False
