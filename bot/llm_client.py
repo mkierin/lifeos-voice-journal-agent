@@ -2,7 +2,8 @@ from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+import uuid
 from openai import OpenAI
 from .config import DEEPSEEK_API_KEY, OPENAI_API_KEY, get_setting, CATEGORIES
 from .vector_store import VectorStore
@@ -37,20 +38,84 @@ class LLMClient:
             retries=2
         )
 
+        @self.agent.tool
+        async def manage_task(
+            ctx: RunContext[JournalDeps],
+            description: str,
+            task_id: Optional[str] = None,
+            status: Literal["open", "completed", "archived"] = "open",
+            goal_id: Optional[str] = None,
+            due_date: Optional[str] = None
+        ) -> str:
+            """
+            Create or update an actionable task.
+            - description: What needs to be done.
+            - task_id: If updating, provide the existing ID. If None, a new one is created.
+            - status: 'open' or 'completed'.
+            - goal_id: Optional link to a higher-level goal.
+            - due_date: Optional ISO date for reminders.
+            """
+            tid = task_id or str(uuid.uuid4())
+            ctx.deps.vector_store.upsert_task(
+                user_id=ctx.deps.user_id,
+                task_id=tid,
+                description=description,
+                status=status,
+                goal_id=goal_id,
+                due_date=due_date
+            )
+            return f"Task '{description}' (ID: {tid}) has been { 'updated' if task_id else 'created' } with status: {status}."
+
+        @self.agent.tool
+        def get_open_tasks(ctx: RunContext[JournalDeps], goal_id: Optional[str] = None) -> str:
+            """Retrieve all currently open tasks for the user."""
+            tasks = ctx.deps.vector_store.get_tasks(ctx.deps.user_id, status="open", goal_id=goal_id)
+            if not tasks:
+                return "No open tasks found."
+            
+            output = "Current Open Tasks:\n"
+            for t in tasks:
+                p = t.payload
+                due = f" [Due: {p['due_date']}]" if p.get('due_date') else ""
+                goal = f" (Goal: {p['goal_id']})" if p.get('goal_id') else ""
+                output += f"- {p['description']} (ID: {t.id}){due}{goal}\n"
+            return output
+
+        @self.agent.tool
+        async def set_reminder(ctx: RunContext[JournalDeps], reminder_text: str, in_days: int) -> str:
+            """Set a reminder for the user in a certain number of days."""
+            due_date = (datetime.now() + timedelta(days=in_days)).isoformat()
+            tid = str(uuid.uuid4())
+            ctx.deps.vector_store.upsert_task(
+                user_id=ctx.deps.user_id,
+                task_id=tid,
+                description=f"REMINDER: {reminder_text}",
+                status="open",
+                due_date=due_date,
+                metadata={"type": "reminder"}
+            )
+            return f"Reminder set for {reminder_text} in {in_days} days (Due: {due_date[:10]})."
+
         @self.agent.system_prompt
         def get_system_prompt(ctx: RunContext[JournalDeps]) -> str:
             base_prompt = get_setting("system_prompt")
             date_info = f"\nToday is {ctx.deps.current_date}."
             instructions = """
 You are a personal journal assistant. You can track ideas, goals, fitness data, and general thoughts.
-When saving information:
-- Use 'goal' type for things the user wants to achieve. Goals have a status (pending, in_progress, completed).
-- Use 'idea' type for creative thoughts or future projects.
-- Use 'fitness' type for workouts, weight, or health-related data.
-- Use 'general' for everything else.
+
+### Goal Tracking & Task Extrapolation:
+When a user mentions a long-term goal (e.g., "I want to do 100 pullups"):
+1. **Break it down**: Extrapolate actionable, progressive tasks using `manage_task`.
+2. **Assign Goal IDs**: Use a consistent name or ID for the goal to link tasks.
+3. **Check Progress**: When a user journals, check if they addressed an open task. If they did, use `manage_task` to mark it 'completed'.
+4. **Adaptive Planning**: If they struggle or excel, update the tasks dynamically.
+5. **Reminders**: If requested, use `set_reminder` or `manage_task` with a `due_date`.
+
+### Task Management:
+- Use `get_open_tasks` to see what is currently pending.
+- Always provide the Task ID to the user if they need to refer to it, but prefer natural language updates.
 
 Always consider the current date when the user talks about "today", "yesterday", or "next week".
-When asked about goals, summarize their current state by searching for entries of type 'goal'.
 """
             return f"{base_prompt}{date_info}{instructions}"
 
