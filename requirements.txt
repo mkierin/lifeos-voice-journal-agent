@@ -1,5 +1,5 @@
 python-telegram-bot==20.7
-openai-whisper==20231117
+openai-whisper
 qdrant-client==1.7.0
 sentence-transformers==2.2.2
 openai==1.12.0

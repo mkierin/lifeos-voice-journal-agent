@@ -44,17 +44,22 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audio_path = f"data/{update.message.message_id}.ogg"
         await voice_file.download_to_drive(audio_path)
         
-        # Use local whisper if available, else fallback to OpenAI API
-        if whisper_available and whisper_model:
-            result = whisper_model.transcribe(audio_path)
+        # Use local whisper if available AND ffmpeg is present, else fallback to OpenAI API
+        if whisper_available and whisper_model and ffmpeg_available:
+            # Local whisper model is synchronous
+            import asyncio
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, lambda: whisper_model.transcribe(audio_path))
             text = result["text"].strip()
         else:
             try:
-                text = llm_client.transcribe(audio_path)
+                text = await llm_client.transcribe(audio_path)
             except Exception as api_err:
-                if not whisper_available:
-                    await update.message.reply_text("❌ Transcription failed. OpenAI API error and local Whisper not installed.")
-                    raise api_err
+                error_msg = "❌ Transcription failed. "
+                if not (whisper_available and ffmpeg_available):
+                    error_msg += "Local Whisper requires ffmpeg which is not installed. "
+                error_msg += f"OpenAI API error: {str(api_err)}"
+                await update.message.reply_text(error_msg)
                 raise api_err
         
         # Structured classification using pydantic-ai

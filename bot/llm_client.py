@@ -96,14 +96,22 @@ class LLMClient:
         # This is handled by get_setting dynamically in _setup_agents
         pass
 
-    def transcribe(self, audio_file_path: str) -> str:
+    async def transcribe(self, audio_file_path: str) -> str:
         """Transcribe audio using OpenAI Whisper API"""
         if not self.openai_client:
             raise ValueError("OpenAI API key not configured for transcription")
         
-        with open(audio_file_path, "rb") as audio_file:
-            transcript = self.openai_client.audio.transcriptions.create(
-                model="whisper-1", 
-                file=audio_file
-            )
+        # Use run_in_executor to avoid blocking the event loop with file I/O and sync API call
+        import asyncio
+        from functools import partial
+        
+        def _call_openai():
+            with open(audio_file_path, "rb") as audio_file:
+                return self.openai_client.audio.transcriptions.create(
+                    model="whisper-1", 
+                    file=audio_file
+                )
+        
+        loop = asyncio.get_event_loop()
+        transcript = await loop.run_in_executor(None, _call_openai)
         return transcript.text
