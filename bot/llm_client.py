@@ -1,7 +1,7 @@
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from openai import OpenAI
 from .config import DEEPSEEK_API_KEY, OPENAI_API_KEY, get_setting, CATEGORIES
@@ -11,7 +11,7 @@ from .vector_store import VectorStore
 class JournalDeps:
     vector_store: VectorStore
     user_id: int
-    current_date: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %A"))
+    current_date: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %A"))
 
 class ClassificationOutput(BaseModel):
     categories: List[str] = Field(description="List of categories that apply to the text")
