@@ -7,8 +7,15 @@ from .config import QDRANT_HOST, QDRANT_PORT
 
 class VectorStore:
     def __init__(self):
-        self.client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-        self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
+        if QDRANT_HOST == ":memory:":
+            self.client = QdrantClient(":memory:")
+            # Use a mock embedder for in-memory testing to avoid heavy downloads
+            self.embedder = type('MockEmbedder', (), {
+                'encode': lambda self, x: [0.1] * 384
+            })()
+        else:
+            self.client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+            self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
         self.collection_name = "journal"
         
         self._create_collection()
