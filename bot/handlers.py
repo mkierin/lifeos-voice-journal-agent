@@ -3,7 +3,7 @@ import whisper
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from .vector_store import VectorStore
-from .llm_client import LLMClient
+from .llm_client import LLMClient, JournalDeps
 from .config import CATEGORIES, get_setting, update_setting
 
 whisper_model = whisper.load_model("base")
@@ -21,35 +21,26 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = whisper_model.transcribe(audio_path)
     text = result["text"].strip()
     
-    categories = llm_client.classify_categories(text, CATEGORIES)
+    # Structured classification using pydantic-ai
+    categories = llm_client.classify_categories(text)
     
+    # Adding to vector store
     vector_store.add_entry(
         text=text,
         categories=categories,
         user_id=update.message.from_user.id
     )
     
-    context_results = vector_store.search(
-        query=text,
-        user_id=update.message.from_user.id,
-        limit=3
-    )
+    # Generate context-aware response using agent with tools
+    deps = JournalDeps(vector_store=vector_store, user_id=update.message.from_user.id)
+    prompt = f"User just said: \"{text}\". Provide a brief, helpful response. You can search the journal if needed to provide better context."
     
-    context_text = "\n".join([f"- {r.payload['text']}" for r in context_results[:3]])
-    
-    prompt = f"""Previous related entries:
-{context_text}
-
-User just said: "{text}"
-
-Provide a brief, helpful response (2-3 sentences max)."""
-    
-    response = llm_client.generate(prompt)
+    response = llm_client.agent.run_sync(prompt, deps=deps)
     
     await update.message.reply_text(
         f"📝 *Transcribed:*\n{text}\n\n"
         f"🏷️ *Categories:* {', '.join(categories)}\n\n"
-        f"💡 *Response:*\n{response}",
+        f"💡 *Response:*\n{response.data}",
         parse_mode="Markdown"
     )
     
@@ -58,38 +49,17 @@ Provide a brief, helpful response (2-3 sentences max)."""
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text queries"""
+    if await handle_prompt_update(update, context):
+        return
+
     query = update.message.text
     
-    category_filter = None
-    if ":" in query:
-        parts = query.split(":", 1)
-        potential_category = parts[0].strip().lower()
-        if potential_category in CATEGORIES:
-            category_filter = [potential_category]
-            query = parts[1].strip()
+    # Let the agent handle the query, using tools to search if necessary
+    deps = JournalDeps(vector_store=vector_store, user_id=update.message.from_user.id)
+    response = llm_client.agent.run_sync(query, deps=deps)
     
-    results = vector_store.search(
-        query=query,
-        user_id=update.message.from_user.id,
-        categories=category_filter,
-        limit=5
-    )
-    
-    if not results:
-        await update.message.reply_text("No relevant entries found. Start journaling with voice messages!")
-        return
-    
-    context_text = "\n".join([f"- {r.payload['text']}" for r in results])
-    
-    prompt = f"""User's relevant journal entries:
-{context_text}
+    await update.message.reply_text(response.data)
 
-User asks: "{query}"
-
-Provide a helpful, personalized answer based on their entries."""
-    
-    response = llm_client.generate(prompt)
-    await update.message.reply_text(response)
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
