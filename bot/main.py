@@ -1,4 +1,5 @@
 import logging
+import os
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from .config import TELEGRAM_TOKEN
 from .handlers import (
@@ -12,10 +13,24 @@ from .handlers import (
     handle_prompt_update
 )
 
+# Configure logging to both console and file
+os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    handlers=[
+        logging.FileHandler("logs/bot.log"),
+        logging.StreamHandler()
+    ]
 )
+
+logger = logging.getLogger(__name__)
+
+async def error_handler(update, context):
+    """Log Errors caused by Updates."""
+    logger.error(f'Update "{update}" caused error "{context.error}"', exc_info=context.error)
+    if update and update.effective_message:
+        await update.effective_message.reply_text("Sorry, I encountered an internal error. I've logged it for my human to check.")
 
 async def message_handler(update, context):
     # Try handling as prompt update first
@@ -26,6 +41,9 @@ async def message_handler(update, context):
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
+    
+    # Register error handler
+    app.add_error_handler(error_handler)
     
     app.add_handler(CommandHandler("start", handle_start))
     app.add_handler(CommandHandler("stats", handle_stats))
