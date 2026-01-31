@@ -7,7 +7,7 @@ services:
     ports:
       - "6333:6333"
     volumes:
-      - ./qdrant_storage:/qdrant/storage
+      - ./qdrant_data:/qdrant/storage
     restart: unless-stopped
  
   voice-journal-bot:
@@ -24,4 +24,5 @@ services:
       - QDRANT_PORT=6333
     volumes:
       - ./data:/app/data
+      - ./qdrant_data:/app/qdrant_data
     restart: unless-stopped
