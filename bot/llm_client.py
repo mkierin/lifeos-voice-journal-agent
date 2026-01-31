@@ -64,7 +64,8 @@ class LLMClient:
                 goal_id=goal_id,
                 due_date=due_date
             )
-            return f"Task '{description}' (ID: {tid}) has been { 'updated' if task_id else 'created' } with status: {status}."
+            # Shortened tool response for LLM
+            return f"Task '{description}' { 'updated' if task_id else 'created' }."
 
         @self.agent.tool
         def get_open_tasks(ctx: RunContext[JournalDeps], goal_id: Optional[str] = None) -> str:
@@ -78,7 +79,8 @@ class LLMClient:
                 p = t.payload
                 due = f" [Due: {p['due_date']}]" if p.get('due_date') else ""
                 goal = f" (Goal: {p['goal_id']})" if p.get('goal_id') else ""
-                output += f"- {p['description']} (ID: {t.id}){due}{goal}\n"
+                # Removed task ID from output to LLM to discourage its use in chat
+                output += f"- {p['description']}{due}{goal}\n"
             return output
 
         @self.agent.tool
@@ -94,31 +96,28 @@ class LLMClient:
                 due_date=due_date,
                 metadata={"type": "reminder"}
             )
-            return f"Reminder set for {reminder_text} in {in_days} days (Due: {due_date[:10]})."
+            return f"Reminder set for {reminder_text} in {in_days} days."
 
         @self.agent.system_prompt
         def get_system_prompt(ctx: RunContext[JournalDeps]) -> str:
             base_prompt = get_setting("system_prompt")
             date_info = f"\nToday is {ctx.deps.current_date}."
             instructions = """
-You are a personal journal assistant. You act as a coach and friend.
+You are a down-to-earth coach, mentor, and friend. Talk like you're texting a friend.
 
-### Output Style:
-- NO Markdown bolding (**). Use plain text.
-- Be extremely concise.
-- Use a friendly, casual tone (down-to-earth).
-- Condense retrieved info to essentials.
+### Rules:
+- NO Markdown bolding (**). NO technical jargon. NO task IDs in messages.
+- Be EXTREMELY concise. One or two short sentences max.
+- Don't repeat what the user just said.
+- Use plain text only.
 
-### Goal Tracking & Task Extrapolation:
-When a user mentions a long-term goal:
-1. **Break it down**: Create actionable tasks with `manage_task`.
-2. **Check Progress**: Mark tasks 'completed' when the user mentions progress.
-3. **Adaptive**: Update tasks dynamically.
-4. **Reminders**: Use `set_reminder` or `manage_task` with a `due_date`.
+### Goals vs Tasks:
+- Goals are high-level outcomes (e.g., "Run a marathon").
+- Tasks are specific actions (e.g., "Buy running shoes").
+- Always distinguish between them. Break goals into tasks automatically.
 
-### Task Management:
-- Use `get_open_tasks` to see pending items.
-- Refer to tasks naturally, avoid technical IDs unless necessary.
+### Context:
+- Condense retrieved info. Only show the full plan if explicitly asked.
 """
             return f"{base_prompt}{date_info}{instructions}"
 
