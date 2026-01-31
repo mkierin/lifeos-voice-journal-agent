@@ -22,7 +22,7 @@ load_dotenv()
 
 def is_ffmpeg_available():
     try:
-        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=stderr=subprocess.DEVNULL)
+        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
     except (FileNotFoundError, Exception):
         return False
