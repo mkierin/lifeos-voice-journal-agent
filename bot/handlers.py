@@ -1,4 +1,12 @@
 import os
+import json
+import random
+import subprocess
+from datetime import datetime
+from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+
 try:
     import whisper
     whisper_available = True
@@ -6,19 +14,17 @@ except ImportError:
     whisper_available = False
     whisper = None
 
-import subprocess
-from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
 from .vector_store import VectorStore
 from .llm_client import LLMClient, JournalDeps
 from .config import CATEGORIES, get_setting, update_setting
 
+load_dotenv()
+
 def is_ffmpeg_available():
     try:
-        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=stderr=subprocess.DEVNULL)
         return True
-    except FileNotFoundError:
+    except (FileNotFoundError, Exception):
         return False
 
 ffmpeg_available = is_ffmpeg_available()
@@ -35,6 +41,20 @@ else:
 vector_store = VectorStore()
 llm_client = LLMClient()
 
+FEEDBACK_PHRASES = [
+    "Got it, looking into that...",
+    "On it!",
+    "Checking your journal...",
+    "Thinking...",
+    "Got you, one sec...",
+    "Processing that...",
+    "Let me see...",
+    "Searching your entries..."
+]
+
+def get_random_feedback():
+    return random.choice(FEEDBACK_PHRASES)
+
 def get_result_data(result):
     """Safely get data from pydantic-ai result"""
     if hasattr(result, 'data'):
@@ -46,7 +66,7 @@ def get_result_data(result):
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle voice messages"""
     # Quick acknowledgment
-    status_msg = await update.message.reply_text("Got it, transcribing...")
+    status_msg = await update.message.reply_text(get_random_feedback())
     
     try:
         os.makedirs("data", exist_ok=True)
@@ -78,11 +98,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         prompt = f"User just said (via voice): \"{text}\". Please save this appropriately and provide a brief response."
         
-        await status_msg.edit_text("Got the text, thinking...")
+        await status_msg.edit_text(get_random_feedback())
         response = await llm_client.agent.run(prompt, deps=deps)
         
         # Final reply without Markdown bolding
-        reply = f"Transcribed: {text}\n\n{get_result_data(response)}"
+        # Voice messages can be extra concise, just the reply
+        reply = get_result_data(response)
         await status_msg.edit_text(reply)
         
         if os.path.exists(audio_path):
@@ -99,11 +120,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Send quick feedback
     await update.message.reply_chat_action("typing")
-    # Small delay or immediate "Got it" if it's a long process, but let's try typing first
-    # The user said "short feedback that you got the info"
-    feedback = await update.message.reply_text("Got it, looking into that...")
+    feedback = await update.message.reply_text(get_random_feedback())
 
-    # Let the agent handle the query, using tools to search or add entries if necessary
+    # Let the agent handle the query
     deps = JournalDeps(
         vector_store=vector_store, 
         user_id=update.message.from_user.id,
