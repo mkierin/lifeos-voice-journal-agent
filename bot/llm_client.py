@@ -2,6 +2,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from dataclasses import dataclass
+from openai import OpenAI
 from .config import DEEPSEEK_API_KEY, OPENAI_API_KEY, get_setting, CATEGORIES
 from .vector_store import VectorStore
 
@@ -17,6 +18,7 @@ class ClassificationOutput(BaseModel):
 class LLMClient:
     def __init__(self):
         self._setup_agents()
+        self.openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
     def _setup_agents(self):
         provider = get_setting("llm_provider")
@@ -93,3 +95,15 @@ class LLMClient:
     def switch_provider(self, provider: str):
         # This is handled by get_setting dynamically in _setup_agents
         pass
+
+    def transcribe(self, audio_file_path: str) -> str:
+        """Transcribe audio using OpenAI Whisper API"""
+        if not self.openai_client:
+            raise ValueError("OpenAI API key not configured for transcription")
+        
+        with open(audio_file_path, "rb") as audio_file:
+            transcript = self.openai_client.audio.transcriptions.create(
+                model="whisper-1", 
+                file=audio_file
+            )
+        return transcript.text

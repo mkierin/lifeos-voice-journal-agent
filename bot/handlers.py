@@ -36,13 +36,6 @@ llm_client = LLMClient()
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle voice messages"""
-    if not whisper_available:
-        await update.message.reply_text("❌ Voice transcription is not available in this environment (missing 'openai-whisper' package). Please test with text messages!")
-        return
-    
-    if not ffmpeg_available:
-        await update.message.reply_text("⚠️ 'ffmpeg' is not installed. Voice transcription may fail. Please test with text messages if this doesn't work.")
-
     await update.message.reply_text("🎙️ Transcribing your voice message...")
     
     try:
@@ -50,8 +43,18 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audio_path = f"data/{update.message.message_id}.ogg"
         await voice_file.download_to_drive(audio_path)
         
-        result = whisper_model.transcribe(audio_path)
-        text = result["text"].strip()
+        # Use local whisper if available, else fallback to OpenAI API
+        if whisper_available and whisper_model:
+            result = whisper_model.transcribe(audio_path)
+            text = result["text"].strip()
+        else:
+            try:
+                text = llm_client.transcribe(audio_path)
+            except Exception as api_err:
+                if not whisper_available:
+                    await update.message.reply_text("❌ Transcription failed. OpenAI API error and local Whisper not installed.")
+                    raise api_err
+                raise api_err
         
         # Structured classification using pydantic-ai
         categories = llm_client.classify_categories(text)
