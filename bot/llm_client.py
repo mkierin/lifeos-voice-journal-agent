@@ -51,6 +51,24 @@ class LLMClient:
                 return "No entries found yet."
             return "\n".join([f"- {r.payload['text']} ({r.payload['timestamp'][:10]})" for r in results])
 
+        @self.agent.tool
+        async def add_journal_entry(ctx: RunContext[JournalDeps], text: str) -> str:
+            """
+            Add a new entry to the journal. 
+            Use this when the user provides information they want to save in their journal.
+            """
+            # We use the classifier to get categories
+            # Note: we need to handle the fact that we are inside a tool
+            # It's better to just call the vector store directly with a default category if needed,
+            # or use the classifier if we can.
+            # For simplicity in the tool, we'll just add it.
+            ctx.deps.vector_store.add_entry(
+                text=text,
+                categories=["general"],
+                user_id=ctx.deps.user_id
+            )
+            return "Entry saved successfully to your journal."
+
         # Classifier agent for structured output
         self.classifier = Agent(
             model_name,

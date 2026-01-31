@@ -34,6 +34,14 @@ else:
 vector_store = VectorStore()
 llm_client = LLMClient()
 
+def get_result_data(result):
+    """Safely get data from pydantic-ai result"""
+    if hasattr(result, 'data'):
+        return result.data
+    if hasattr(result, 'output'):
+        return result.output
+    return str(result)
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle voice messages"""
     await update.message.reply_text("🎙️ Transcribing your voice message...")
@@ -46,7 +54,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Use local whisper if available AND ffmpeg is present, else fallback to OpenAI API
         if whisper_available and whisper_model and ffmpeg_available:
-            # Local whisper model is synchronous
             import asyncio
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, lambda: whisper_model.transcribe(audio_path))
@@ -81,7 +88,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"📝 *Transcribed:*\n{text}\n\n"
             f"🏷️ *Categories:* {', '.join(categories)}\n\n"
-            f"💡 *Response:*\n{response.data}",
+            f"💡 *Response:*\n{get_result_data(response)}",
             parse_mode="Markdown"
         )
         
@@ -91,17 +98,17 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error processing voice: {str(e)}")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text queries"""
+    """Handle text queries and entries"""
     if await handle_prompt_update(update, context):
         return
 
     query = update.message.text
     
-    # Let the agent handle the query, using tools to search if necessary
+    # Let the agent handle the query, using tools to search or add entries if necessary
     deps = JournalDeps(vector_store=vector_store, user_id=update.message.from_user.id)
     result = await llm_client.agent.run(query, deps=deps)
     
-    await update.message.reply_text(result.data)
+    await update.message.reply_text(get_result_data(result))
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,7 +116,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome = """👋 Welcome to your Voice Journal!
 
 🎙️ Send voice messages to journal your thoughts
-💬 Ask questions to search your entries
+💬 Send text messages to journal or ask questions
 🏷️ Use "category: question" for filtered search
 
 *Commands:*
@@ -236,7 +243,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif query.data == "set_prompt":
         context.user_data["awaiting_prompt"] = True
-        await query.edit_message_text("Please send the new System Prompt as a text message. Current prompt is:\n\n" + get_setting("system_prompt"))
+        await query.edit_message_text("Please send the new System Prompt as a text message. Current prompt is:\\n\\n" + get_setting("system_prompt"))
         
     elif query.data == "back_to_settings":
         await show_settings_menu(update)
