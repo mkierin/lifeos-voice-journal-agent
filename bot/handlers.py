@@ -45,7 +45,8 @@ def get_result_data(result):
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle voice messages"""
-    await update.message.reply_text("🎙️ Transcribing your voice message...")
+    # Quick acknowledgment
+    status_msg = await update.message.reply_text("Got it, transcribing...")
     
     try:
         os.makedirs("data", exist_ok=True)
@@ -63,11 +64,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 text = await llm_client.transcribe(audio_path)
             except Exception as api_err:
-                error_msg = "❌ Transcription failed. "
+                error_msg = "Transcription failed. "
                 if not (whisper_available and ffmpeg_available):
-                    error_msg += "Local Whisper requires ffmpeg which is not installed. "
-                error_msg += f"OpenAI API error: {str(api_err)}"
-                await update.message.reply_text(error_msg)
+                    error_msg += "Requires ffmpeg. "
+                await status_msg.edit_text(error_msg)
                 raise api_err
         
         # Generate context-aware response using agent with tools
@@ -78,18 +78,17 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         prompt = f"User just said (via voice): \"{text}\". Please save this appropriately and provide a brief response."
         
+        await status_msg.edit_text("Got the text, thinking...")
         response = await llm_client.agent.run(prompt, deps=deps)
         
-        await update.message.reply_text(
-            f"📝 *Transcribed:*\n{text}\n\n"
-            f"💡 *Response:*\n{get_result_data(response)}",
-            parse_mode="Markdown"
-        )
+        # Final reply without Markdown bolding
+        reply = f"Transcribed: {text}\n\n{get_result_data(response)}"
+        await status_msg.edit_text(reply)
         
         if os.path.exists(audio_path):
             os.remove(audio_path)
     except Exception as e:
-        await update.message.reply_text(f"❌ Error processing voice: {str(e)}")
+        await update.message.reply_text(f"Error: {str(e)}")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text queries and entries"""
@@ -98,6 +97,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.message.text
     
+    # Send quick feedback
+    await update.message.reply_chat_action("typing")
+    # Small delay or immediate "Got it" if it's a long process, but let's try typing first
+    # The user said "short feedback that you got the info"
+    feedback = await update.message.reply_text("Got it, looking into that...")
+
     # Let the agent handle the query, using tools to search or add entries if necessary
     deps = JournalDeps(
         vector_store=vector_store, 
@@ -105,26 +110,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_date=datetime.now().strftime("%Y-%m-%d %A")
     )
     
-    # CRITICAL: Use await run(), NEVER run_sync()
-    result = await llm_client.agent.run(query, deps=deps)
-    
-    await update.message.reply_text(get_result_data(result))
-
+    try:
+        # CRITICAL: Use await run(), NEVER run_sync()
+        result = await llm_client.agent.run(query, deps=deps)
+        await feedback.edit_text(get_result_data(result))
+    except Exception as e:
+        await feedback.edit_text(f"Sorry, ran into an issue: {str(e)}")
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
-    welcome = """👋 Welcome to your Voice Journal!
+    welcome = """Welcome to your Voice Journal!
 
-🎙️ Send voice messages to journal your thoughts
-💬 Send text messages to journal or ask questions
-🏷️ Categories are automatically tracked (goals, ideas, fitness, etc.)
+Send voice or text to journal your thoughts.
+Categories like goals, ideas, and fitness are tracked automatically.
 
-*Commands:*
-/settings - Edit bot settings (LLM, provider, etc.)
+Commands:
+/settings - Edit bot settings
 /stats - View your stats
 /recent - See recent entries
 """
-    await update.message.reply_text(welcome, parse_mode="Markdown")
+    await update.message.reply_text(welcome)
 
 async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show user statistics"""
@@ -135,16 +140,13 @@ async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat = entry.payload.get("type", "general")
         category_counts[cat] = category_counts.get(cat, 0) + 1
     
-    stats = f"""📊 *Your Journal Stats*
-
-Total entries: {len(recent)}
-
-*Types:*
-"""
+    stats = "Your Journal Stats\n\n"
+    stats += f"Total entries: {len(recent)}\n\n"
+    stats += "Types:\n"
     for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
-        stats += f"• {cat}: {count}\n"
+        stats += f"- {cat}: {count}\n"
     
-    await update.message.reply_text(stats, parse_mode="Markdown")
+    await update.message.reply_text(stats)
 
 async def handle_recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show recent entries"""
@@ -154,14 +156,14 @@ async def handle_recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No entries yet. Start journaling!")
         return
     
-    message = "📝 *Recent Entries:*\n\n"
+    message = "Recent Entries:\n\n"
     for entry in recent:
         timestamp = entry.payload["timestamp"][:10]
         text = entry.payload["text"][:100] + "..." if len(entry.payload["text"]) > 100 else entry.payload["text"]
         cat = entry.payload.get("type", "general")
-        message += f"*{timestamp}* [{cat}]\n{text}\n\n"
+        message += f"{timestamp} [{cat}]\n{text}\n\n"
     
-    await update.message.reply_text(message, parse_mode="Markdown")
+    await update.message.reply_text(message)
 
 # --- SETTINGS COMMAND ---
 
@@ -174,13 +176,11 @@ async def show_settings_menu(update: Update):
     temp = get_setting("temperature")
     tokens = get_setting("max_tokens")
     
-    text = f"""⚙️ *Settings*
-
-*LLM Provider:* {llm_provider.upper()}
-*Temperature:* {temp}
-*Max Tokens:* {tokens}
-
-Select a setting to edit:"""
+    text = f"Settings\n\n"
+    text += f"LLM Provider: {llm_provider.upper()}\n"
+    text += f"Temperature: {temp}\n"
+    text += f"Max Tokens: {tokens}\n\n"
+    text += "Select a setting to edit:"
     
     keyboard = [
         [
@@ -199,9 +199,9 @@ Select a setting to edit:"""
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
     else:
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await update.message.reply_text(text, reply_markup=reply_markup)
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle settings callbacks"""
@@ -243,7 +243,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif query.data == "set_prompt":
         context.user_data["awaiting_prompt"] = True
-        await query.edit_message_text("Please send the new System Prompt as a text message. Current prompt is:\n\n" + get_setting("system_prompt"))
+        await query.edit_message_text("Send the new System Prompt. Current is:\n\n" + get_setting("system_prompt"))
         
     elif query.data == "back_to_settings":
         await show_settings_menu(update)
@@ -257,7 +257,7 @@ async def handle_prompt_update(update: Update, context: ContextTypes.DEFAULT_TYP
         new_prompt = update.message.text
         update_setting("system_prompt", new_prompt)
         context.user_data["awaiting_prompt"] = False
-        await update.message.reply_text("✅ System Prompt updated!")
+        await update.message.reply_text("System Prompt updated!")
         await show_settings_menu(update)
         return True
     return False

@@ -19,15 +19,20 @@ A personal voice journal assistant integrated with Telegram. It allows users to 
 - `qdrant_storage/`: Persistent storage for the vector database.
 
 ## User Preferences
-- Prefers low-cost solutions.
-- Use DeepSeek by default as it's cheaper.
+- Prefers low-cost solutions (DeepSeek by default).
 - Support switching between DeepSeek and OpenAI.
-- Containerized deployment using Docker.
+- Personality: Down-to-earth coach, mentor, friend, and personal assistant.
+- Communication Style: Extremely concise, casual "texting a friend" style.
+- NO Markdown bolding (**). Use plain text.
+- Info retrieval should be condensed to essentials unless a full plan is requested.
+- Feedback: Wants immediate acknowledgment (e.g., "Got it") when sending messages.
 
 ## Project Guidelines
 - Keep responses concise and actionable.
 - Support auto-categorization of journal entries.
 - Ensure easy deployment on Hetzner VPS.
+- ALWAYS use `await agent.run()` and NEVER `run_sync()` in async handlers.
+- Handle `AgentRunResult` safely using `get_result_data` helper.
 
 ## Common Patterns
 - Semantic search for retrieving context from previous entries.

@@ -15,7 +15,7 @@ DEFAULT_SETTINGS = {
     "llm_provider": os.getenv("LLM_PROVIDER", "deepseek"),
     "temperature": 0.7,
     "max_tokens": 500,
-    "system_prompt": "You are a personal AI assistant helping the user track their life goals, fitness, ideas, and daily journal. Be concise, supportive, and actionable. Use their previous entries to provide personalized advice."
+    "system_prompt": "You are a down-to-earth coach, mentor, friend, and personal assistant. Write short, casual messages as if texting a friend. NO bolding (**). NO complex formatting. Be concise and practical. When retrieving info, condense it to the essentials unless a full plan is requested."
 }
 
 def load_settings():
