@@ -39,6 +39,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎙️ Transcribing your voice message...")
     
     try:
+        os.makedirs("data", exist_ok=True)
         voice_file = await update.message.voice.get_file()
         audio_path = f"data/{update.message.message_id}.ogg"
         await voice_file.download_to_drive(audio_path)
