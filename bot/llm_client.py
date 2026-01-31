@@ -1,7 +1,8 @@
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from dataclasses import dataclass
+from datetime import datetime
 from openai import OpenAI
 from .config import DEEPSEEK_API_KEY, OPENAI_API_KEY, get_setting, CATEGORIES
 from .vector_store import VectorStore
@@ -10,6 +11,7 @@ from .vector_store import VectorStore
 class JournalDeps:
     vector_store: VectorStore
     user_id: int
+    current_date: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %A"))
 
 class ClassificationOutput(BaseModel):
     categories: List[str] = Field(description="List of categories that apply to the text")
@@ -35,13 +37,30 @@ class LLMClient:
             retries=2
         )
 
+        @self.agent.system_prompt
+        def get_system_prompt(ctx: RunContext[JournalDeps]) -> str:
+            base_prompt = get_setting("system_prompt")
+            date_info = f"\nToday is {ctx.deps.current_date}."
+            instructions = """
+You are a personal journal assistant. You can track ideas, goals, fitness data, and general thoughts.
+When saving information:
+- Use 'goal' type for things the user wants to achieve. Goals have a status (pending, in_progress, completed).
+- Use 'idea' type for creative thoughts or future projects.
+- Use 'fitness' type for workouts, weight, or health-related data.
+- Use 'general' for everything else.
+
+Always consider the current date when the user talks about "today", "yesterday", or "next week".
+When asked about goals, summarize their current state by searching for entries of type 'goal'.
+"""
+            return f"{base_prompt}{date_info}{instructions}"
+
         @self.agent.tool
         def search_journal(ctx: RunContext[JournalDeps], query: str, limit: int = 5) -> str:
             """Search the user's journal for relevant entries based on a query."""
             results = ctx.deps.vector_store.search(query, ctx.deps.user_id, limit=limit)
             if not results:
                 return "No relevant entries found."
-            return "\n".join([f"- {r.payload['text']} ({r.payload['timestamp'][:10]})" for r in results])
+            return "\n".join([f"- [{r.payload.get('type', 'general')}] {r.payload['text']} ({r.payload['timestamp'][:10]})" for r in results])
 
         @self.agent.tool
         def get_recent_entries(ctx: RunContext[JournalDeps], limit: int = 5) -> str:
@@ -49,25 +68,58 @@ class LLMClient:
             results = ctx.deps.vector_store.get_recent_entries(ctx.deps.user_id, limit=limit)
             if not results:
                 return "No entries found yet."
-            return "\n".join([f"- {r.payload['text']} ({r.payload['timestamp'][:10]})" for r in results])
+            return "\n".join([f"- [{r.payload.get('type', 'general')}] {r.payload['text']} ({r.payload['timestamp'][:10]})" for r in results])
 
         @self.agent.tool
-        async def add_journal_entry(ctx: RunContext[JournalDeps], text: str) -> str:
+        async def add_journal_entry(
+            ctx: RunContext[JournalDeps], 
+            text: str, 
+            entry_type: Literal["general", "goal", "idea", "fitness", "project"] = "general",
+            status: Optional[Literal["pending", "in_progress", "completed", "abandoned"]] = None,
+            metadata: Optional[dict] = None
+        ) -> str:
             """
-            Add a new entry to the journal. 
-            Use this when the user provides information they want to save in their journal.
+            Add a new entry to the journal with specific type and status.
+            - entry_type: category of the entry (goal, idea, fitness, etc.)
+            - status: relevant for goals (pending, in_progress, completed)
+            - metadata: any extra key-value pairs to store
             """
-            # We use the classifier to get categories
-            # Note: we need to handle the fact that we are inside a tool
-            # It's better to just call the vector store directly with a default category if needed,
-            # or use the classifier if we can.
-            # For simplicity in the tool, we'll just add it.
+            final_metadata = metadata or {}
+            final_metadata["type"] = entry_type
+            if status:
+                final_metadata["status"] = status
+            
+            # Use the classifier to get categories if it's general, otherwise use the type
+            categories = [entry_type] if entry_type != "general" else ["general"]
+            
             ctx.deps.vector_store.add_entry(
                 text=text,
-                categories=["general"],
-                user_id=ctx.deps.user_id
+                categories=categories,
+                user_id=ctx.deps.user_id,
+                metadata=final_metadata
             )
-            return "Entry saved successfully to your journal."
+            return f"Successfully saved {entry_type} to your journal."
+
+        @self.agent.tool
+        async def update_goal_status(
+            ctx: RunContext[JournalDeps], 
+            goal_description: str, 
+            new_status: Literal["pending", "in_progress", "completed", "abandoned"]
+        ) -> str:
+            """
+            Update the status of an existing goal. 
+            Search for the goal first, then save a new entry reflecting the status update.
+            """
+            # We don't "update" in-place in vector DB easily without ID, 
+            # so we add a new entry marking the progress.
+            text = f"Updated status for goal '{goal_description}' to {new_status}."
+            ctx.deps.vector_store.add_entry(
+                text=text,
+                categories=["goal", "update"],
+                user_id=ctx.deps.user_id,
+                metadata={"type": "goal", "status": new_status, "goal_ref": goal_description}
+            )
+            return f"Goal status updated to {new_status}."
 
         # Classifier agent for structured output
         self.classifier = Agent(

@@ -7,6 +7,7 @@ except ImportError:
     whisper = None
 
 import subprocess
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from .vector_store import VectorStore
@@ -69,25 +70,18 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(error_msg)
                 raise api_err
         
-        # Structured classification using pydantic-ai
-        categories = await llm_client.classify_categories(text)
-        
-        # Adding to vector store
-        vector_store.add_entry(
-            text=text,
-            categories=categories,
-            user_id=update.message.from_user.id
-        )
-        
         # Generate context-aware response using agent with tools
-        deps = JournalDeps(vector_store=vector_store, user_id=update.message.from_user.id)
-        prompt = f"User just said: \"{text}\". Provide a brief, helpful response. You can search the journal if needed to provide better context."
+        deps = JournalDeps(
+            vector_store=vector_store, 
+            user_id=update.message.from_user.id,
+            current_date=datetime.now().strftime("%Y-%m-%d %A")
+        )
+        prompt = f"User just said (via voice): \"{text}\". Please save this appropriately and provide a brief response."
         
         response = await llm_client.agent.run(prompt, deps=deps)
         
         await update.message.reply_text(
             f"📝 *Transcribed:*\n{text}\n\n"
-            f"🏷️ *Categories:* {', '.join(categories)}\n\n"
             f"💡 *Response:*\n{get_result_data(response)}",
             parse_mode="Markdown"
         )
@@ -105,7 +99,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
     
     # Let the agent handle the query, using tools to search or add entries if necessary
-    deps = JournalDeps(vector_store=vector_store, user_id=update.message.from_user.id)
+    deps = JournalDeps(
+        vector_store=vector_store, 
+        user_id=update.message.from_user.id,
+        current_date=datetime.now().strftime("%Y-%m-%d %A")
+    )
+    
+    # CRITICAL: Use await run(), NEVER run_sync()
     result = await llm_client.agent.run(query, deps=deps)
     
     await update.message.reply_text(get_result_data(result))
@@ -117,10 +117,10 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 🎙️ Send voice messages to journal your thoughts
 💬 Send text messages to journal or ask questions
-🏷️ Use "category: question" for filtered search
+🏷️ Categories are automatically tracked (goals, ideas, fitness, etc.)
 
 *Commands:*
-/settings - Edit bot settings (LLM, prompt, etc.)
+/settings - Edit bot settings (LLM, provider, etc.)
 /stats - View your stats
 /recent - See recent entries
 """
@@ -132,14 +132,14 @@ async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     category_counts = {}
     for entry in recent:
-        for cat in entry.payload.get("categories", []):
-            category_counts[cat] = category_counts.get(cat, 0) + 1
+        cat = entry.payload.get("type", "general")
+        category_counts[cat] = category_counts.get(cat, 0) + 1
     
     stats = f"""📊 *Your Journal Stats*
 
 Total entries: {len(recent)}
 
-*Categories:*
+*Types:*
 """
     for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
         stats += f"• {cat}: {count}\n"
@@ -158,8 +158,8 @@ async def handle_recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for entry in recent:
         timestamp = entry.payload["timestamp"][:10]
         text = entry.payload["text"][:100] + "..." if len(entry.payload["text"]) > 100 else entry.payload["text"]
-        cats = ", ".join(entry.payload.get("categories", []))
-        message += f"*{timestamp}* ({cats})\n{text}\n\n"
+        cat = entry.payload.get("type", "general")
+        message += f"*{timestamp}* [{cat}]\n{text}\n\n"
     
     await update.message.reply_text(message, parse_mode="Markdown")
 
@@ -243,7 +243,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif query.data == "set_prompt":
         context.user_data["awaiting_prompt"] = True
-        await query.edit_message_text("Please send the new System Prompt as a text message. Current prompt is:\\n\\n" + get_setting("system_prompt"))
+        await query.edit_message_text("Please send the new System Prompt as a text message. Current prompt is:\n\n" + get_setting("system_prompt"))
         
     elif query.data == "back_to_settings":
         await show_settings_menu(update)
