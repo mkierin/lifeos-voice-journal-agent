@@ -116,12 +116,21 @@ class VectorStore:
             # Match any of the categories
             must_filters.append(FieldCondition(key="categories", match=MatchAny(any=categories)))
         
-        results = self.client.search(
-            collection_name=self.collection_name,
-            query_vector=query_embedding,
-            limit=limit,
-            query_filter=Filter(must=must_filters)
-        )
+        # Use query_points if search is not available (common in newer qdrant-client versions for :memory:)
+        if hasattr(self.client, "query_points"):
+            results = self.client.query_points(
+                collection_name=self.collection_name,
+                query=query_embedding,
+                limit=limit,
+                query_filter=Filter(must=must_filters)
+            ).points
+        else:
+            results = self.client.search(
+                collection_name=self.collection_name,
+                query_vector=query_embedding,
+                limit=limit,
+                query_filter=Filter(must=must_filters)
+            )
         
         return results
     
