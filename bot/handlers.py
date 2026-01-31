@@ -1,51 +1,85 @@
 import os
-import whisper
+try:
+    import whisper
+    whisper_available = True
+except ImportError:
+    whisper_available = False
+    whisper = None
+
+import subprocess
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from .vector_store import VectorStore
 from .llm_client import LLMClient, JournalDeps
 from .config import CATEGORIES, get_setting, update_setting
 
-whisper_model = whisper.load_model("base")
+def is_ffmpeg_available():
+    try:
+        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except FileNotFoundError:
+        return False
+
+ffmpeg_available = is_ffmpeg_available()
+
+if whisper_available:
+    try:
+        whisper_model = whisper.load_model("base")
+    except Exception:
+        whisper_available = False
+        whisper_model = None
+else:
+    whisper_model = None
+
 vector_store = VectorStore()
 llm_client = LLMClient()
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle voice messages"""
+    if not whisper_available:
+        await update.message.reply_text("❌ Voice transcription is not available in this environment (missing 'openai-whisper' package). Please test with text messages!")
+        return
+    
+    if not ffmpeg_available:
+        await update.message.reply_text("⚠️ 'ffmpeg' is not installed. Voice transcription may fail. Please test with text messages if this doesn't work.")
+
     await update.message.reply_text("🎙️ Transcribing your voice message...")
     
-    voice_file = await update.message.voice.get_file()
-    audio_path = f"data/{update.message.message_id}.ogg"
-    await voice_file.download_to_drive(audio_path)
-    
-    result = whisper_model.transcribe(audio_path)
-    text = result["text"].strip()
-    
-    # Structured classification using pydantic-ai
-    categories = llm_client.classify_categories(text)
-    
-    # Adding to vector store
-    vector_store.add_entry(
-        text=text,
-        categories=categories,
-        user_id=update.message.from_user.id
-    )
-    
-    # Generate context-aware response using agent with tools
-    deps = JournalDeps(vector_store=vector_store, user_id=update.message.from_user.id)
-    prompt = f"User just said: \"{text}\". Provide a brief, helpful response. You can search the journal if needed to provide better context."
-    
-    response = llm_client.agent.run_sync(prompt, deps=deps)
-    
-    await update.message.reply_text(
-        f"📝 *Transcribed:*\n{text}\n\n"
-        f"🏷️ *Categories:* {', '.join(categories)}\n\n"
-        f"💡 *Response:*\n{response.data}",
-        parse_mode="Markdown"
-    )
-    
-    if os.path.exists(audio_path):
-        os.remove(audio_path)
+    try:
+        voice_file = await update.message.voice.get_file()
+        audio_path = f"data/{update.message.message_id}.ogg"
+        await voice_file.download_to_drive(audio_path)
+        
+        result = whisper_model.transcribe(audio_path)
+        text = result["text"].strip()
+        
+        # Structured classification using pydantic-ai
+        categories = llm_client.classify_categories(text)
+        
+        # Adding to vector store
+        vector_store.add_entry(
+            text=text,
+            categories=categories,
+            user_id=update.message.from_user.id
+        )
+        
+        # Generate context-aware response using agent with tools
+        deps = JournalDeps(vector_store=vector_store, user_id=update.message.from_user.id)
+        prompt = f"User just said: \"{text}\". Provide a brief, helpful response. You can search the journal if needed to provide better context."
+        
+        response = llm_client.agent.run_sync(prompt, deps=deps)
+        
+        await update.message.reply_text(
+            f"📝 *Transcribed:*\n{text}\n\n"
+            f"🏷️ *Categories:* {', '.join(categories)}\n\n"
+            f"💡 *Response:*\n{response.data}",
+            parse_mode="Markdown"
+        )
+        
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error processing voice: {str(e)}")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text queries"""
