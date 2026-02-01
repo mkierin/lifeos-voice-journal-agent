@@ -1,21 +1,27 @@
 version: '3.8'
  
 services:
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: qdrant
-    ports:
-      - "6333:6333"
-    volumes:
-      - ./qdrant_data:/qdrant/storage
-    restart: unless-stopped
- 
-  voice-journal-bot:
-    build: .
-    container_name: voice-journal-bot
-    depends_on:
-      - qdrant
-    environment:
+    qdrant:
+      image: qdrant/qdrant:latest
+      container_name: qdrant
+      ports:
+        - "6333:6333"
+      volumes:
+        - ./qdrant_data:/qdrant/storage
+      restart: unless-stopped
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+
+    voice-journal-bot:
+      build: .
+      container_name: voice-journal-bot
+      depends_on:
+        qdrant:
+          condition: service_healthy
+      environment:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}

@@ -1,7 +1,24 @@
+# Environment variables
 .env
-data/
-qdrant_data/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env/
+
+# Database / Persistent storage
+qdrant_data/
+data/
 logs/
-.orchids/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

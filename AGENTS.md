@@ -30,7 +30,9 @@ A personal voice journal assistant integrated with Telegram. It allows users to 
 ## Project Guidelines
 - Keep responses concise and actionable.
 - Support auto-categorization of journal entries.
-- Ensure easy deployment on Hetzner VPS.
+- Ensure easy deployment on Hetzner VPS using Docker Compose.
+- Persistence is handled via the `./qdrant_data` volume mapping.
+- Use `DEPLOYMENT.md` for specific VPS setup instructions.
 - ALWAYS use `await agent.run()` and NEVER `run_sync()` in async handlers.
 - Handle `AgentRunResult` safely using `get_result_data` helper.
 
