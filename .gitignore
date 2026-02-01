@@ -1,0 +1,7 @@
+.env
+data/
+qdrant_data/
+__pycache__/
+*.pyc
+logs/
+.orchids/
