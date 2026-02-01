@@ -21,20 +21,6 @@ class VectorStore:
         self.model_name = "BAAI/bge-small-en-v1.5" # 384 dim, fast and light
         self.client.set_model(self.model_name)
         
-        self._ensure_collection(self.collection_name)
-        self._ensure_collection(self.tasks_collection)
-    
-    def _ensure_collection(self, name: str):
-        """Create collection if it doesn't exist, using FastEmbed to detect size"""
-        if not self.client.collection_exists(name):
-            self.client.create_collection(
-                collection_name=name,
-                vectors_config=models.VectorParams(
-                    size=384, # bge-small-en-v1.5 is 384
-                    distance=models.Distance.COSINE
-                )
-            )
-    
     def add_entry(self, text: str, categories: list, user_id: int, metadata: dict = None):
         """Add journal entry to vector store using auto-embedding"""
         payload = {
