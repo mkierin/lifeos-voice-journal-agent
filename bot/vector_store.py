@@ -1,4 +1,5 @@
 from qdrant_client import QdrantClient, models
+from qdrant_client.http.exceptions import UnexpectedResponse
 import uuid
 from datetime import datetime
 from .config import QDRANT_HOST, QDRANT_PORT
@@ -13,13 +14,21 @@ class VectorStore:
                 self.client = QdrantClient(path=QDRANT_HOST)
             else:
                 self.client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-        
+
         self.collection_name = "journal"
         self.tasks_collection = "tasks"
-        
+
         # FastEmbed model
         self.model_name = "BAAI/bge-small-en-v1.5" # 384 dim, fast and light
         self.client.set_model(self.model_name)
+
+    def _collection_exists(self, collection_name: str) -> bool:
+        """Check if a collection exists"""
+        try:
+            collections = self.client.get_collections().collections
+            return any(c.name == collection_name for c in collections)
+        except Exception:
+            return False
         
     def add_entry(self, text: str, categories: list, user_id: int, metadata: dict = None):
         """Add journal entry to vector store using auto-embedding"""
@@ -65,46 +74,66 @@ class VectorStore:
 
     def get_tasks(self, user_id: int, status: str = None, goal_id: str = None):
         """Get tasks for a user with optional filters"""
+        # Return empty list if collection doesn't exist yet
+        if not self._collection_exists(self.tasks_collection):
+            return []
+
         must_filters = [models.FieldCondition(key="user_id", match=models.MatchValue(value=user_id))]
         if status:
             must_filters.append(models.FieldCondition(key="status", match=models.MatchValue(value=status)))
         if goal_id:
             must_filters.append(models.FieldCondition(key="goal_id", match=models.MatchValue(value=goal_id)))
-            
-        results = self.client.scroll(
-            collection_name=self.tasks_collection,
-            scroll_filter=models.Filter(must=must_filters),
-            with_payload=True,
-            with_vectors=False
-        )
-        return results[0]
+
+        try:
+            results = self.client.scroll(
+                collection_name=self.tasks_collection,
+                scroll_filter=models.Filter(must=must_filters),
+                with_payload=True,
+                with_vectors=False
+            )
+            return results[0]
+        except UnexpectedResponse:
+            return []
     
     def search(self, query: str, user_id: int, categories: list = None, limit: int = 5):
         """Search for relevant entries using auto-embedding"""
+        # Return empty list if collection doesn't exist yet
+        if not self._collection_exists(self.collection_name):
+            return []
+
         must_filters = [
             models.FieldCondition(key="user_id", match=models.MatchValue(value=user_id))
         ]
         if categories:
             must_filters.append(models.FieldCondition(key="categories", match=models.MatchAny(any=categories)))
-        
-        results = self.client.query(
-            collection_name=self.collection_name,
-            query_text=query,
-            query_filter=models.Filter(must=must_filters),
-            limit=limit
-        )
-        
-        return results
+
+        try:
+            results = self.client.query(
+                collection_name=self.collection_name,
+                query_text=query,
+                query_filter=models.Filter(must=must_filters),
+                limit=limit
+            )
+            return results
+        except UnexpectedResponse:
+            return []
     
     def get_recent_entries(self, user_id: int, limit: int = 10):
         """Get recent entries for a user"""
-        results = self.client.scroll(
-            collection_name=self.collection_name,
-            scroll_filter=models.Filter(
-                must=[models.FieldCondition(key="user_id", match=models.MatchValue(value=user_id))]
-            ),
-            limit=limit,
-            with_payload=True,
-            with_vectors=False
-        )
-        return sorted(results[0], key=lambda x: x.payload["timestamp"], reverse=True)
+        # Return empty list if collection doesn't exist yet
+        if not self._collection_exists(self.collection_name):
+            return []
+
+        try:
+            results = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=models.Filter(
+                    must=[models.FieldCondition(key="user_id", match=models.MatchValue(value=user_id))]
+                ),
+                limit=limit,
+                with_payload=True,
+                with_vectors=False
+            )
+            return sorted(results[0], key=lambda x: x.payload["timestamp"], reverse=True)
+        except UnexpectedResponse:
+            return []

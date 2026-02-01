@@ -1,6 +1,7 @@
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.openai import OpenAIModel
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import uuid
@@ -27,14 +28,29 @@ class LLMClient:
         self._last_provider: Optional[str] = None
         self.openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
+    def _get_model(self):
+        """Get the appropriate model based on provider setting"""
+        provider = get_setting("llm_provider")
+
+        if provider == "deepseek":
+            # DeepSeek uses OpenAI-compatible API
+            return OpenAIModel(
+                "deepseek-chat",
+                base_url="https://api.deepseek.com",
+                api_key=DEEPSEEK_API_KEY
+            )
+        else:
+            # OpenAI
+            return "openai:gpt-4o-mini"
+
     def _get_agent(self) -> Agent:
         provider = get_setting("llm_provider")
         if self._agent is None or provider != self._last_provider:
             self._last_provider = provider
-            model_name = "deepseek:deepseek-chat" if provider == "deepseek" else "openai:gpt-4o-mini"
-            
+            model = self._get_model()
+
             self._agent = Agent(
-                model_name,
+                model,
                 deps_type=JournalDeps,
                 system_prompt=get_setting("system_prompt"),
                 retries=2
@@ -45,9 +61,9 @@ class LLMClient:
     def _get_classifier(self) -> Agent:
         provider = get_setting("llm_provider")
         if self._classifier is None or provider != self._last_provider:
-            model_name = "deepseek:deepseek-chat" if provider == "deepseek" else "openai:gpt-4o-mini"
+            model = self._get_model()
             self._classifier = Agent(
-                model_name,
+                model,
                 output_type=ClassificationOutput,
                 system_prompt="You are an expert classifier. Categorize the journal entry accurately.",
                 retries=2

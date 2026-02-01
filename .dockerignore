@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Tests
+tests/
+test_*.py
+run_test.py
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+AGENTS.md
+DEPLOYMENT.md
+
+# Data directories (mapped as volumes)
+data/
+logs/
+qdrant_data/
+test_qdrant/
+.next/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Node modules (if any)
+node_modules/
+
+# Docker
+docker-compose.yml
+Dockerfile
+
+# Orchids
+.orchids/
+
+# OS
+.DS_Store
+Thumbs.db

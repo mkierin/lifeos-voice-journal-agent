@@ -1,5 +1,5 @@
-# Environment variables
-# .env # Removed by Orchids to allow .env files
+# Environment variables (IMPORTANT: Never commit API keys!)
+.env
 
 # Python
 __pycache__/
@@ -8,7 +8,6 @@ __pycache__/
 venv/
 .venv/
 env/
-# .env/ # Removed by Orchids to allow .env files
 
 # Database / Persistent storage
 qdrant_data/
@@ -22,3 +21,8 @@ logs/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Test artifacts
+test_qdrant/
+.next/
+node_modules/
