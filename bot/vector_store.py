@@ -105,7 +105,7 @@ class VectorStore:
             query_text=query,
             query_filter=models.Filter(must=must_filters),
             limit=limit
-        ).points
+        )
         
         return results
     
