@@ -1,5 +1,5 @@
 # Environment variables
-.env
+# .env # Removed by Orchids to allow .env files
 
 # Python
 __pycache__/
@@ -8,7 +8,7 @@ __pycache__/
 venv/
 .venv/
 env/
-.env/
+# .env/ # Removed by Orchids to allow .env files
 
 # Database / Persistent storage
 qdrant_data/
