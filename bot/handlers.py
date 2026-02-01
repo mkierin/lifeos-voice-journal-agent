@@ -7,36 +7,11 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-try:
-    import whisper
-    whisper_available = True
-except ImportError:
-    whisper_available = False
-    whisper = None
-
 from .vector_store import VectorStore
 from .llm_client import LLMClient, JournalDeps
 from .config import CATEGORIES, get_setting, update_setting
 
 load_dotenv()
-
-def is_ffmpeg_available():
-    try:
-        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
-    except (FileNotFoundError, Exception):
-        return False
-
-ffmpeg_available = is_ffmpeg_available()
-
-if whisper_available:
-    try:
-        whisper_model = whisper.load_model("base")
-    except Exception:
-        whisper_available = False
-        whisper_model = None
-else:
-    whisper_model = None
 
 vector_store = VectorStore()
 llm_client = LLMClient()
@@ -87,7 +62,6 @@ def get_result_data(result):
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle voice messages"""
-    # Quick acknowledgment
     status_msg = await update.message.reply_text(get_random_feedback())
     
     try:
@@ -96,21 +70,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audio_path = f"data/{update.message.message_id}.ogg"
         await voice_file.download_to_drive(audio_path)
         
-        # Use local whisper if available AND ffmpeg is present, else fallback to OpenAI API
-        if whisper_available and whisper_model and ffmpeg_available:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, lambda: whisper_model.transcribe(audio_path))
-            text = result["text"].strip()
-        else:
-            try:
-                text = await llm_client.transcribe(audio_path)
-            except Exception as api_err:
-                error_msg = "Transcription failed. "
-                if not (whisper_available and ffmpeg_available):
-                    error_msg += "Requires ffmpeg. "
-                await status_msg.edit_text(error_msg)
-                raise api_err
+        # Always use OpenAI Whisper API for light & fast transcription
+        try:
+            text = await llm_client.transcribe(audio_path)
+        except Exception as api_err:
+            await status_msg.edit_text("Transcription failed. Please check your OpenAI API key.")
+            raise api_err
         
         # Generate context-aware response using agent with tools
         deps = JournalDeps(
@@ -123,8 +88,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(get_random_feedback())
         response = await llm_client.agent.run(prompt, deps=deps)
         
-        # Final reply without Markdown bolding
-        # Voice messages can be extra concise, just the reply
         reply = get_result_data(response)
         await status_msg.edit_text(reply)
         
@@ -152,7 +115,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     try:
-        # CRITICAL: Use await run(), NEVER run_sync()
         result = await llm_client.agent.run(query, deps=deps)
         await feedback.edit_text(get_result_data(result))
     except Exception as e:
