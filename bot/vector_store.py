@@ -19,6 +19,7 @@ class VectorStore:
         
         # FastEmbed model
         self.model_name = "BAAI/bge-small-en-v1.5" # 384 dim, fast and light
+        self.client.set_model(self.model_name)
         
         self._ensure_collection(self.collection_name)
         self._ensure_collection(self.tasks_collection)

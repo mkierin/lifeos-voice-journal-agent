@@ -4,28 +4,30 @@ A personal voice journal assistant integrated with Telegram. It allows users to 
 ## Tech Stack
 - Python 3.11
 - Telegram Bot API (python-telegram-bot)
-- OpenAI Whisper (local transcription)
-- Qdrant (vector database)
+- OpenAI Whisper API (fast, reliable transcription)
+- Qdrant (vector database) with FastEmbed
 - DeepSeek / OpenAI (LLM for categorization and responses)
+- Pydantic AI (modern agent framework)
 - Docker & Docker Compose
 
 ## Architecture
 - `bot/main.py`: Entry point for the Telegram bot.
 - `bot/config.py`: Configuration and environment variable management.
 - `bot/handlers.py`: Telegram message and command handlers.
-- `bot/llm_client.py`: Wrapper for LLM interactions (DeepSeek/OpenAI).
+- `bot/llm_client.py`: Wrapper for LLM interactions (DeepSeek/OpenAI/Whisper).
 - `bot/vector_store.py`: Interface for Qdrant vector database operations.
 - `data/`: Local storage for transient audio files.
-- `qdrant_storage/`: Persistent storage for the vector database.
+- `qdrant_data/`: Persistent storage for the vector database (mapped to host).
 
 ## User Preferences
+- VPS: 2 vCPU, 4GB RAM, 40GB Disk (Confirmed sufficient for this lightweight stack).
 - Prefers low-cost solutions (DeepSeek by default).
 - Support switching between DeepSeek and OpenAI.
 - Personality: Down-to-earth coach, mentor, friend, and personal assistant.
 - Communication Style: Extremely concise, casual "texting a friend" style.
 - NO Markdown bolding (**). Use plain text.
 - Info retrieval should be condensed to essentials unless a full plan is requested.
-- Feedback: Wants immediate acknowledgment (e.g., "Got it") when sending messages.
+- Feedback: Wants immediate acknowledgment when sending messages.
 
 ## Project Guidelines
 - Keep responses concise and actionable.
