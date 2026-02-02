@@ -114,7 +114,17 @@ class VectorStore:
                 query_filter=models.Filter(must=must_filters),
                 limit=limit
             )
-            return results
+            
+            # Normalize results: client.query returns QueryResponse with .metadata
+            # while client.scroll returns Record with .payload.
+            # We wrap QueryResponse to provide .payload for consistency.
+            class NormalizedResult:
+                def __init__(self, res):
+                    self.id = res.id
+                    self.payload = getattr(res, 'metadata', getattr(res, 'payload', {}))
+                    self.score = getattr(res, 'score', 0)
+            
+            return [NormalizedResult(r) for r in results]
         except UnexpectedResponse:
             return []
     
