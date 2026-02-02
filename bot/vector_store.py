@@ -115,16 +115,18 @@ class VectorStore:
                 limit=limit
             )
             
-            # Normalize results: client.query returns QueryResponse with .metadata
-            # while client.scroll returns Record with .payload.
-            # We wrap QueryResponse to provide .payload for consistency.
+            # The high-level client.query returns a list of QueryResponse objects
+            # but some versions might return a single QueryResponse with a .points attribute.
+            # We also ensure each item has a 'payload' attribute (some versions use 'metadata').
+            points = results.points if hasattr(results, "points") else results
+            
             class NormalizedResult:
                 def __init__(self, res):
-                    self.id = res.id
-                    self.payload = getattr(res, 'metadata', getattr(res, 'payload', {}))
-                    self.score = getattr(res, 'score', 0)
+                    self.id = getattr(res, "id", None)
+                    self.payload = getattr(res, "payload", getattr(res, "metadata", {}))
+                    self.score = getattr(res, "score", 0)
             
-            return [NormalizedResult(r) for r in results]
+            return [NormalizedResult(p) for p in points]
         except UnexpectedResponse:
             return []
     
