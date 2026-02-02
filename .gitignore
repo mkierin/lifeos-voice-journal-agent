@@ -13,6 +13,17 @@ env/
 qdrant_data/
 data/
 logs/
+storage/
+snapshots/
+.qdrant-initialized
+
+# Qdrant binaries and archives
+qdrant.exe
+qdrant.zip
+qdrant
+
+# Orchids framework files
+.orchids/
 
 # IDEs
 .vscode/
@@ -22,10 +33,12 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Dependencies
+node_modules/
+.next/
+
 # Test artifacts
 test_qdrant/
-.next/
-node_modules/
 
 # Archive (old Docker files)
 archive/
