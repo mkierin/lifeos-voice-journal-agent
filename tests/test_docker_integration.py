@@ -44,7 +44,7 @@ def test_qdrant_can_create_collection():
     client.add(
         collection_name=test_collection,
         documents=["This is a test document"],
-        ids=["test-1"]
+        ids=[1]
     )
 
     # Verify collection was created
