@@ -26,3 +26,6 @@ Thumbs.db
 test_qdrant/
 .next/
 node_modules/
+
+# Archive (old Docker files)
+archive/
