@@ -17,16 +17,15 @@ class ReminderScheduler:
 
     def start(self):
         """Start the reminder scheduler"""
-        # Check for due reminders every day at 9 AM
+        # Check for due reminders every 15 minutes
         self.scheduler.add_job(
             self.check_and_send_reminders,
-            'cron',
-            hour=9,
-            minute=0,
-            id='daily_reminder_check'
+            'interval',
+            minutes=15,
+            id='reminder_check'
         )
         self.scheduler.start()
-        logger.info("Reminder scheduler started - checking daily at 9 AM")
+        logger.info("Reminder scheduler started - checking every 15 minutes")
 
     async def check_and_send_reminders(self):
         """Check for due reminders and send notifications"""
@@ -47,10 +46,11 @@ class ReminderScheduler:
                 try:
                     due_date = datetime.fromisoformat(due_date_str)
 
-                    # If reminder is due (date has passed or is today)
-                    if due_date.date() <= now.date():
+                    # If reminder is due (current time has passed the due time)
+                    if due_date <= now:
                         user_id = payload.get('user_id')
                         description = payload.get('description', '')
+                        task_id = task.id
 
                         # Send notification to user
                         message = f"⏰ Reminder: {description}"
@@ -61,6 +61,14 @@ class ReminderScheduler:
                                 text=message
                             )
                             logger.info(f"Sent reminder to user {user_id}: {description}")
+
+                            # Mark reminder as completed after sending
+                            self.vector_store.upsert_task(
+                                user_id=user_id,
+                                task_id=task_id,
+                                description=description,
+                                status="completed"
+                            )
                         except Exception as e:
                             logger.error(f"Failed to send reminder to user {user_id}: {e}")
 
@@ -78,19 +86,80 @@ class ReminderScheduler:
 
 def parse_natural_date(date_string: str) -> datetime:
     """
-    Parse natural language dates like 'Tuesday', 'next week', 'in 3 days'
+    Parse natural language dates and times like:
+    - 'today at 3pm', 'tomorrow at 12', 'Tuesday at 18:30'
+    - 'in 2 hours', 'in 30 minutes'
+    - 'next week', 'in 3 days'
     Returns a datetime object
     """
+    import re
+
     date_string = date_string.lower().strip()
     now = datetime.now()
 
+    # Extract time component if present (e.g., "at 3pm", "at 15:30", "at 12")
+    time_match = re.search(r'at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', date_string)
+    target_time = None
+
+    if time_match:
+        hour = int(time_match.group(1))
+        minute = int(time_match.group(2)) if time_match.group(2) else 0
+        am_pm = time_match.group(3)
+
+        # Handle AM/PM
+        if am_pm == 'pm' and hour < 12:
+            hour += 12
+        elif am_pm == 'am' and hour == 12:
+            hour = 0
+
+        target_time = (hour, minute)
+        # Remove time part from string for date parsing
+        date_string = re.sub(r'at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?', '', date_string).strip()
+
+    # Handle "in X minutes/hours"
+    if "in" in date_string:
+        parts = date_string.split()
+        try:
+            idx = parts.index("in")
+            if idx + 2 <= len(parts):
+                num = int(parts[idx + 1])
+                unit = parts[idx + 2].lower() if idx + 2 < len(parts) else ""
+
+                if "minute" in unit:
+                    return now + timedelta(minutes=num)
+                elif "hour" in unit:
+                    return now + timedelta(hours=num)
+                elif "day" in unit:
+                    result = now + timedelta(days=num)
+                    if target_time:
+                        result = result.replace(hour=target_time[0], minute=target_time[1], second=0, microsecond=0)
+                    return result
+                elif "week" in unit:
+                    result = now + timedelta(weeks=num)
+                    if target_time:
+                        result = result.replace(hour=target_time[0], minute=target_time[1], second=0, microsecond=0)
+                    return result
+        except (ValueError, IndexError):
+            pass
+
     # Handle "tomorrow"
-    if date_string == "tomorrow":
-        return now + timedelta(days=1)
+    if "tomorrow" in date_string:
+        result = now + timedelta(days=1)
+        if target_time:
+            result = result.replace(hour=target_time[0], minute=target_time[1], second=0, microsecond=0)
+        else:
+            result = result.replace(hour=9, minute=0, second=0, microsecond=0)  # Default 9 AM
+        return result
 
     # Handle "today"
-    if date_string == "today":
-        return now
+    if "today" in date_string or date_string == "":
+        result = now
+        if target_time:
+            result = result.replace(hour=target_time[0], minute=target_time[1], second=0, microsecond=0)
+            # If time has already passed today, schedule for tomorrow
+            if result <= now:
+                result = result + timedelta(days=1)
+        return result
 
     # Handle day names (monday, tuesday, etc.)
     days_of_week = {
@@ -116,42 +185,35 @@ def parse_natural_date(date_string: str) -> datetime:
             if "next" in date_string:
                 days_ahead += 7
 
-            return now + timedelta(days=days_ahead)
+            result = now + timedelta(days=days_ahead)
+            if target_time:
+                result = result.replace(hour=target_time[0], minute=target_time[1], second=0, microsecond=0)
+            else:
+                result = result.replace(hour=9, minute=0, second=0, microsecond=0)  # Default 9 AM
+            return result
 
-    # Handle "next week"
+    # Handle "next week" / "next month"
     if "next week" in date_string:
-        return now + timedelta(weeks=1)
+        result = now + timedelta(weeks=1)
+        if target_time:
+            result = result.replace(hour=target_time[0], minute=target_time[1], second=0, microsecond=0)
+        return result
 
-    # Handle "next month"
     if "next month" in date_string:
-        return now + relativedelta(months=1)
-
-    # Handle "in X days/weeks/months"
-    if "in" in date_string:
-        parts = date_string.split()
-        try:
-            idx = parts.index("in")
-            if idx + 2 < len(parts):
-                num = int(parts[idx + 1])
-                unit = parts[idx + 2].lower()
-
-                if "day" in unit:
-                    return now + timedelta(days=num)
-                elif "week" in unit:
-                    return now + timedelta(weeks=num)
-                elif "month" in unit:
-                    return now + relativedelta(months=num)
-                elif "hour" in unit:
-                    return now + timedelta(hours=num)
-        except (ValueError, IndexError):
-            pass
+        result = now + relativedelta(months=1)
+        if target_time:
+            result = result.replace(hour=target_time[0], minute=target_time[1], second=0, microsecond=0)
+        return result
 
     # Try using dateutil parser as fallback
     try:
-        return dateparser.parse(date_string, fuzzy=True)
+        parsed = dateparser.parse(date_string, fuzzy=True)
+        if parsed and target_time:
+            parsed = parsed.replace(hour=target_time[0], minute=target_time[1], second=0, microsecond=0)
+        return parsed if parsed else now + timedelta(hours=1)
     except:
-        # Default to tomorrow if parsing fails
-        return now + timedelta(days=1)
+        # Default to 1 hour from now if parsing fails
+        return now + timedelta(hours=1)
 
 
 def calculate_days_until(target_date: datetime) -> int:

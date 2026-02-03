@@ -298,7 +298,8 @@ async def handle_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if due_date_str:
             try:
                 due_date = datetime.fromisoformat(due_date_str)
-                date_display = due_date.strftime("%a, %b %d")
+                # Show date and time
+                date_display = due_date.strftime("%a, %b %d at %I:%M %p")
             except:
                 date_display = "Unknown date"
         else:

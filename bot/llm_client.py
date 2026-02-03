@@ -113,7 +113,11 @@ class LLMClient:
 
         @agent.tool
         async def set_reminder(ctx: RunContext[JournalDeps], reminder_text: str, when: str = "tomorrow") -> str:
-            """Set a reminder for the user. 'when' can be: 'tomorrow', 'Tuesday', 'next week', 'in 3 days', etc."""
+            """Set a reminder for the user. 'when' supports dates AND times:
+            - With time: 'today at 3pm', 'tomorrow at 12', 'Tuesday at 18:30'
+            - Relative: 'in 2 hours', 'in 30 minutes', 'in 3 days'
+            - Date only: 'tomorrow', 'Tuesday', 'next week'
+            """
             from .reminder_scheduler import parse_natural_date
 
             try:
