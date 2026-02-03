@@ -94,7 +94,30 @@ class VectorStore:
             return results[0]
         except UnexpectedResponse:
             return []
-    
+
+    def get_all_tasks(self, status: str = None):
+        """Get all tasks across all users with optional status filter (for scheduler)"""
+        # Return empty list if collection doesn't exist yet
+        if not self._collection_exists(self.tasks_collection):
+            return []
+
+        must_filters = []
+        if status:
+            must_filters.append(models.FieldCondition(key="status", match=models.MatchValue(value=status)))
+
+        try:
+            scroll_filter = models.Filter(must=must_filters) if must_filters else None
+            results = self.client.scroll(
+                collection_name=self.tasks_collection,
+                scroll_filter=scroll_filter,
+                with_payload=True,
+                with_vectors=False,
+                limit=1000  # Get up to 1000 tasks
+            )
+            return results[0]
+        except UnexpectedResponse:
+            return []
+
     def search(self, query: str, user_id: int, categories: list = None, limit: int = 5):
         """Search for relevant entries using auto-embedding"""
         # Return empty list if collection doesn't exist yet

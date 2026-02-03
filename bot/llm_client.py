@@ -112,19 +112,28 @@ class LLMClient:
             return output
 
         @agent.tool
-        async def set_reminder(ctx: RunContext[JournalDeps], reminder_text: str, in_days: int) -> str:
-            """Set a reminder for the user in a certain number of days."""
-            due_date = (datetime.now() + timedelta(days=in_days)).isoformat()
-            tid = str(uuid.uuid4())
-            ctx.deps.vector_store.upsert_task(
-                user_id=ctx.deps.user_id,
-                task_id=tid,
-                description=f"REMINDER: {reminder_text}",
-                status="open",
-                due_date=due_date,
-                metadata={"type": "reminder"}
-            )
-            return f"Reminder set for {reminder_text} in {in_days} days."
+        async def set_reminder(ctx: RunContext[JournalDeps], reminder_text: str, when: str = "tomorrow") -> str:
+            """Set a reminder for the user. 'when' can be: 'tomorrow', 'Tuesday', 'next week', 'in 3 days', etc."""
+            from .reminder_scheduler import parse_natural_date
+
+            try:
+                target_date = parse_natural_date(when)
+                due_date = target_date.isoformat()
+
+                tid = str(uuid.uuid4())
+                ctx.deps.vector_store.upsert_task(
+                    user_id=ctx.deps.user_id,
+                    task_id=tid,
+                    description=f"{reminder_text}",
+                    status="open",
+                    due_date=due_date,
+                    metadata={"type": "reminder"}
+                )
+
+                date_str = target_date.strftime("%A, %B %d")
+                return f"Reminder set: '{reminder_text}' on {date_str}"
+            except Exception as e:
+                return f"Could not set reminder: {str(e)}"
 
         @agent.system_prompt
         def get_system_prompt(ctx: RunContext[JournalDeps]) -> str:

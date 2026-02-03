@@ -76,18 +76,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as api_err:
             await status_msg.edit_text("Transcription failed. Please check your OpenAI API key.")
             raise api_err
-        
+
+        # Check if message mentions any reminders and auto-complete them
+        await check_and_complete_reminders(text, update.message.from_user.id)
+
         # Generate context-aware response using agent with tools
         deps = JournalDeps(
-            vector_store=vector_store, 
+            vector_store=vector_store,
             user_id=update.message.from_user.id,
             current_date=datetime.now().strftime("%Y-%m-%d %A")
         )
         prompt = f"User just said (via voice): \"{text}\". Please save this appropriately and provide a brief response."
-        
+
         await status_msg.edit_text(get_random_feedback())
         response = await llm_client.agent.run(prompt, deps=deps)
-        
+
         reply = get_result_data(response)
         await status_msg.edit_text(reply)
         
@@ -102,18 +105,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     query = update.message.text
-    
+
+    # Check if message mentions any reminders and auto-complete them
+    await check_and_complete_reminders(query, update.message.from_user.id)
+
     # Send quick feedback
     await update.message.reply_chat_action("typing")
     feedback = await update.message.reply_text(get_random_feedback())
 
     # Let the agent handle the query
     deps = JournalDeps(
-        vector_store=vector_store, 
+        vector_store=vector_store,
         user_id=update.message.from_user.id,
         current_date=datetime.now().strftime("%Y-%m-%d %A")
     )
-    
+
     try:
         result = await llm_client.agent.run(query, deps=deps)
         await feedback.edit_text(get_result_data(result))
@@ -264,3 +270,69 @@ async def handle_prompt_update(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_settings_menu(update)
         return True
     return False
+
+async def handle_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List all active reminders"""
+    user_id = update.message.from_user.id
+
+    # Get all open tasks that are reminders
+    all_tasks = vector_store.get_tasks(user_id, status="open")
+    reminders = [t for t in all_tasks if t.payload.get('metadata', {}).get('type') == 'reminder']
+
+    if not reminders:
+        await update.message.reply_text("No active reminders.")
+        return
+
+    # Sort by due date
+    reminders_sorted = sorted(
+        reminders,
+        key=lambda t: t.payload.get('due_date', '9999-12-31')
+    )
+
+    message = "📅 Your Reminders:\n\n"
+    for reminder in reminders_sorted:
+        payload = reminder.payload
+        description = payload.get('description', 'No description')
+        due_date_str = payload.get('due_date')
+
+        if due_date_str:
+            try:
+                due_date = datetime.fromisoformat(due_date_str)
+                date_display = due_date.strftime("%a, %b %d")
+            except:
+                date_display = "Unknown date"
+        else:
+            date_display = "No date"
+
+        message += f"• {description}\n  ⏰ {date_display}\n\n"
+
+    await update.message.reply_text(message)
+
+async def check_and_complete_reminders(message_text: str, user_id: int):
+    """Check if message mentions any reminders and mark them as completed"""
+    # Get all open reminders for this user
+    all_tasks = vector_store.get_tasks(user_id, status="open")
+    reminders = [t for t in all_tasks if t.payload.get('metadata', {}).get('type') == 'reminder']
+
+    message_lower = message_text.lower()
+
+    for reminder in reminders:
+        payload = reminder.payload
+        description = payload.get('description', '').lower()
+
+        # Simple matching: if the reminder text appears in the message
+        # Extract key words from reminder (remove common words)
+        reminder_words = set(description.split()) - {'the', 'a', 'an', 'to', 'for', 'on', 'in', 'at'}
+
+        # Check if significant words from reminder appear in message
+        matches = sum(1 for word in reminder_words if word in message_lower)
+
+        # If at least 50% of reminder words are mentioned, mark as done
+        if len(reminder_words) > 0 and matches / len(reminder_words) >= 0.5:
+            # Mark reminder as completed
+            vector_store.upsert_task(
+                user_id=user_id,
+                task_id=reminder.id,
+                description=description,
+                status="completed"
+            )

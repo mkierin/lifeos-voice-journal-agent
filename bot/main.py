@@ -10,8 +10,10 @@ from .handlers import (
     handle_recent,
     handle_settings,
     handle_callback,
-    handle_prompt_update
+    handle_prompt_update,
+    handle_reminders
 )
+from .reminder_scheduler import ReminderScheduler
 
 # Configure logging to both console and file
 os.makedirs("logs", exist_ok=True)
@@ -41,20 +43,25 @@ async def message_handler(update, context):
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-    
+
+    # Initialize reminder scheduler
+    scheduler = ReminderScheduler(app.bot)
+    scheduler.start()
+
     # Register error handler
     app.add_error_handler(error_handler)
-    
+
     app.add_handler(CommandHandler("start", handle_start))
     app.add_handler(CommandHandler("stats", handle_stats))
     app.add_handler(CommandHandler("recent", handle_recent))
     app.add_handler(CommandHandler("settings", handle_settings))
-    
+    app.add_handler(CommandHandler("reminders", handle_reminders))
+
     app.add_handler(CallbackQueryHandler(handle_callback))
-    
+
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-    
+
     logging.info("🚀 Voice Journal Bot started!")
     app.run_polling()
 
